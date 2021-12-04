@@ -1,5 +1,7 @@
 # IsaacShelton/llvm-cbe
 
+Contains bugs fixes and improvements upon `JuliaComputingOSS/llvm-cbe`
+
 Takes LLVM SSA intermediate representation and elevates it back up to C code
 
 For example, you can start off with a `.c` file:
