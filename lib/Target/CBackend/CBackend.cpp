@@ -74,7 +74,7 @@ extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CTargetMachine> X(TheCBackendTarget);
 }
-#if LLVM_VERSION_MAJOR >= 12
+#if LLVM_VERSION_MAJOR >= 11
 bool IsPowerOfTwo(unsigned long x)
 {
   return (x & (x - 1)) == 0;
@@ -82,7 +82,7 @@ bool IsPowerOfTwo(unsigned long x)
 #endif
 
 unsigned int NumberOfElements(VectorType *TheType) {
-#if LLVM_VERSION_MAJOR >= 12
+#if LLVM_VERSION_MAJOR >= 10
   return TheType->getElementCount().getValue();
 #else
   return TheType->getNumElements();
@@ -120,7 +120,7 @@ static bool isEmptyType(Type *Ty) {
            std::all_of(STy->element_begin(), STy->element_end(), isEmptyType);
 
   if (VectorType *VTy = dyn_cast<VectorType>(Ty))
-    return NumberOfElements(VTy) == 0 || isEmptyType(VTy->getElementType());
+    return llvm_cbe::NumberOfElements(VTy) == 0 || isEmptyType(VTy->getElementType());
   if (ArrayType *ATy = dyn_cast<ArrayType>(Ty))
     return ATy->getNumElements() == 0 || isEmptyType(ATy->getElementType());
 
@@ -289,9 +289,9 @@ raw_ostream &CWriter::printTypeString(raw_ostream &Out, Type *Ty,
   {
     TypedefDeclTypes.insert(Ty);
     VectorType *VTy = cast<VectorType>(Ty);
-    cwriter_assert(VTy->getNumElements() != 0);
+    cwriter_assert(llvm_cbe::NumberOfElements(VTy) != 0);
     printTypeString(Out, VTy->getElementType(), isSigned);
-    return Out << "x" << NumberOfElements(VTy);
+    return Out << "x" << llvm_cbe::NumberOfElements(VTy);
   }
 
   case Type::ArrayTyID: {
@@ -345,7 +345,7 @@ std::string CWriter::getVectorName(VectorType *VT, bool Aligned) {
     Out << "__MSALIGN__(" << TD->getABITypeAlignment(VT) << ") ";
   }
   printTypeName(VectorInnards, VT->getElementType(), false);
-  return "struct l_vector_" + utostr(NumberOfElements(VT)) + '_' +
+  return "struct l_vector_" + utostr(llvm_cbe::NumberOfElements(VT)) + '_' +
          CBEMangle(VectorInnards.str());
 }
 
@@ -887,7 +887,7 @@ raw_ostream &CWriter::printVectorDeclaration(raw_ostream &Out,
   // Vectors are printed like arrays
   Out << getVectorName(VTy, false) << " {\n  ";
   printTypeName(Out, VTy->getElementType());
-  Out << " vector[" << utostr(NumberOfElements(VTy))
+  Out << " vector[" << utostr(llvm_cbe::NumberOfElements(VTy))
       << "];\n} __attribute__((aligned(" << TD->getABITypeAlignment(VTy)
       << ")));\n";
   return Out;
@@ -1305,7 +1305,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       Out << "(";
       Constant *Zero = Constant::getNullValue(VT->getElementType());
 
-      unsigned NumElts = NumberOfElements(VT);
+      unsigned NumElts = llvm_cbe::NumberOfElements(VT);
       for (unsigned i = 0; i != NumElts; ++i) {
         if (i)
           Out << ", ";
@@ -1481,7 +1481,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
 #endif
   {
     VectorType *VT = cast<VectorType>(CPV->getType());
-    cwriter_assert(VT->getNumElements() != 0 && !isEmptyType(VT));
+    cwriter_assert(NumberOfElements(VT) != 0 && !isEmptyType(VT));
     if (Context != ContextStatic) {
       CtorDeclTypes.insert(VT);
       Out << "llvm_ctor_";
@@ -1501,7 +1501,7 @@ void CWriter::printConstant(Constant *CPV, enum OperandContext Context) {
       Constant *CZ = Constant::getNullValue(VT->getElementType());
       printConstant(CZ, Context);
 
-      for (unsigned i = 1, e = NumberOfElements(VT); i != e; ++i) {
+      for (unsigned i = 1, e = llvm_cbe::NumberOfElements(VT); i != e; ++i) {
         Out << ", ";
         printConstant(CZ, Context);
       }
@@ -2678,7 +2678,7 @@ void CWriter::generateHeader(Module &M) {
       printTypeNameUnaligned(
           Out,
           VectorType::get(Type::getInt1Ty((*it)->getContext()),
-                          cast<VectorType>(*it)->getNumElements()),
+                          llvm_cbe::NumberOfElements(cast<VectorType>(*it))),
           false);
 #endif
     else
@@ -2691,7 +2691,7 @@ void CWriter::generateHeader(Module &M) {
     printTypeNameUnaligned(Out, *it, false);
     Out << " r;\n";
     if (isa<VectorType>(*it)) {
-      unsigned n, l = NumberOfElements(cast<VectorType>(*it));
+      unsigned n, l = llvm_cbe::NumberOfElements(cast<VectorType>(*it));
       for (n = 0; n < l; n++) {
         Out << "  r.vector[" << n << "] = condition.vector[" << n
             << "] ? iftrue.vector[" << n << "] : ifnot.vector[" << n << "];\n";
@@ -2719,7 +2719,7 @@ void CWriter::generateHeader(Module &M) {
     //   };
     //   return c;
     // }
-    unsigned n, l = NumberOfElements((*it).second);
+    unsigned n, l = llvm_cbe::NumberOfElements((*it).second);
     VectorType *RTy =
 #if LLVM_VERSION_MAJOR >= 12
         VectorType::get(Type::getInt1Ty((*it).second->getContext()), l,(*it).second->getElementCount().isScalar());
@@ -2854,8 +2854,8 @@ void CWriter::generateHeader(Module &M) {
       Out << "  ";
       printTypeName(Out, DstTy, DstSigned);
       Out << " out;\n";
-      unsigned n, l = NumberOfElements(cast<VectorType>(DstTy));
-      cwriter_assert(cast<VectorType>(SrcTy)->getNumElements() == l);
+      unsigned n, l = llvm_cbe::NumberOfElements(cast<VectorType>(DstTy));
+      cwriter_assert(llvm_cbe::NumberOfElements(cast<VectorType>(SrcTy)) == l);
       for (n = 0; n < l; n++) {
         Out << "  out.vector[" << n << "] = in.vector[" << n << "];\n";
       }
@@ -2973,7 +2973,7 @@ void CWriter::generateHeader(Module &M) {
 
     if (isa<VectorType>(OpTy)) {
       Out << " r;\n";
-      unsigned n, l = NumberOfElements(cast<VectorType>(OpTy));
+      unsigned n, l = llvm_cbe::NumberOfElements(cast<VectorType>(OpTy));
       for (n = 0; n < l; n++) {
         Out << "  r.vector[" << n << "] = ";
         if (mask)
@@ -5586,8 +5586,8 @@ void CWriter::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
   Out << "(";
 
   Constant *Zero = Constant::getNullValue(EltTy);
-  unsigned NumElts = NumberOfElements(VT);
-  unsigned NumInputElts = NumberOfElements(InputVT); // n
+  unsigned NumElts = llvm_cbe::NumberOfElements(VT);
+  unsigned NumInputElts = llvm_cbe::NumberOfElements(InputVT); // n
   for (unsigned i = 0; i != NumElts; ++i) {
     if (i)
       Out << ", ";

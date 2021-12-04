@@ -35,5 +35,5 @@ if(USE_SYSTEM_LLVM)
     CBackendCodeGen
     CBackendInfo
     )
-  target_link_libraries(llvm-cbe LLVM ${llvm_libs})
+  target_link_libraries(llvm-cbe  ${llvm_libs})
 endif()
